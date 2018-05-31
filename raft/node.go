@@ -242,7 +242,7 @@ type node struct {
 
 func newNode() node {
 	return node{
-		propc:      make(chan pb.Message),
+		propc:      make(chan pb.Message, 256),
 		recvc:      make(chan pb.Message),
 		confc:      make(chan pb.ConfChange),
 		confstatec: make(chan pb.ConfState),
@@ -316,6 +316,14 @@ func (n *node) run(r *raft) {
 		// Currently it is dropped in Step silently.
 		case m := <-propc:
 			m.From = r.id
+			for i := 0; i < 256; i += 1 {
+				select {
+				case pm := <-propc:
+					m.Entries = append(m.Entries, pm.Entries...)
+				default:
+					break
+				}
+			}
 			r.Step(m)
 		case m := <-n.recvc:
 			// filter out response message from unknown From.
