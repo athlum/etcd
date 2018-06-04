@@ -60,7 +60,7 @@ var (
 	restoreDataDir       string
 	restoreWalDir        string
 	restorePeerURLs      string
-	restoreTransPeerURLs string
+	restorePeerTransURLs string
 	restoreName          string
 	skipHashCheck        bool
 )
