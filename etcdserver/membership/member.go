@@ -110,7 +110,7 @@ func (m *Member) Clone() *Member {
 	}
 	if m.PeerTransURLs != nil {
 		mm.PeerTransURLs = make([]string, len(m.PeerTransURLs))
-		copy(mm.PeerTransURLs, mm.PeerTransURLs)
+		copy(mm.PeerTransURLs, m.PeerTransURLs)
 	}
 	if m.ClientURLs != nil {
 		mm.ClientURLs = make([]string, len(m.ClientURLs))
