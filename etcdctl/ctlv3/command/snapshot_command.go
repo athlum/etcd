@@ -54,6 +54,7 @@ const (
 
 var (
 	restoreCluster      string
+	restoreClusterTrans string
 	restoreClusterToken string
 	restoreDataDir      string
 	restoreWalDir       string
@@ -102,6 +103,7 @@ func NewSnapshotRestoreCommand() *cobra.Command {
 	cmd.Flags().StringVar(&restoreDataDir, "data-dir", "", "Path to the data directory")
 	cmd.Flags().StringVar(&restoreWalDir, "wal-dir", "", "Path to the WAL directory (use --data-dir if none given)")
 	cmd.Flags().StringVar(&restoreCluster, "initial-cluster", initialClusterFromName(defaultName), "Initial cluster configuration for restore bootstrap")
+	cmd.Flags().StringVar(&restoreClusterTrans, "initial-trans-cluster", initialTransClusterFromName(defaultName), "Initial trans cluster configuration for restore bootstrap")
 	cmd.Flags().StringVar(&restoreClusterToken, "initial-cluster-token", "etcd-cluster", "Initial cluster token for the etcd cluster during restore bootstrap")
 	cmd.Flags().StringVar(&restorePeerURLs, "initial-advertise-peer-urls", defaultInitialAdvertisePeerURLs, "List of this member's peer URLs to advertise to the rest of the cluster")
 	cmd.Flags().StringVar(&restoreName, "name", defaultName, "Human-readable name for this member")
@@ -209,6 +211,14 @@ func initialClusterFromName(name string) string {
 		n = defaultName
 	}
 	return fmt.Sprintf("%s=http://localhost:2380", n)
+}
+
+func initialTransClusterFromName(name string) string {
+	n := name
+	if name == "" {
+		n = defaultName
+	}
+	return fmt.Sprintf("%s=http://localhost:2381", n)
 }
 
 // makeWAL creates a WAL for the initial cluster
