@@ -320,7 +320,7 @@ func (cr *streamReader) run() {
 			cr.status.activate()
 			plog.Infof("established a TCP streaming connection with peer %s (%s reader)", cr.peerID, cr.typ)
 			err = cr.decodeLoop(rc, t)
-			plog.Warningf("lost the TCP streaming connection with peer %s (%s reader)", cr.peerID, cr.typ)
+			plog.Warningf("[run]lost the TCP streaming connection with peer %s (%s reader)", cr.peerID, cr.typ)
 			switch {
 			// all data is read out
 			case err == io.EOF:
