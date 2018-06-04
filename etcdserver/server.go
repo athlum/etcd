@@ -517,6 +517,9 @@ func NewServer(cfg ServerConfig) (srv *EtcdServer, err error) {
 	if err = tr.Start(); err != nil {
 		return nil, err
 	}
+	if err = ttr.Start(); err != nil {
+		return nil, err
+	}
 	// add all remotes into transport
 	for _, m := range remotes {
 		if m.ID != id {
