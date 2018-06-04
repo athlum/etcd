@@ -168,7 +168,7 @@ func (cw *streamWriter) run() {
 
 			sentFailures.WithLabelValues(cw.peerID.String()).Inc()
 			cw.close()
-			plog.Warningf("lost the TCP streaming connection with peer %s (%s writer)", cw.peerID, t)
+			plog.Warningf("[heartbeatc]lost the TCP streaming connection with peer %s (%s writer)", cw.peerID, t)
 			heartbeatc, msgc = nil, nil
 
 		case m := <-msgc:
@@ -190,7 +190,7 @@ func (cw *streamWriter) run() {
 
 			cw.status.deactivate(failureType{source: t.String(), action: "write"}, err.Error())
 			cw.close()
-			plog.Warningf("lost the TCP streaming connection with peer %s (%s writer)", cw.peerID, t)
+			plog.Warningf("[msgc]lost the TCP streaming connection with peer %s (%s writer)", cw.peerID, t)
 			heartbeatc, msgc = nil, nil
 			cw.r.ReportUnreachable(m.To)
 			sentFailures.WithLabelValues(cw.peerID.String()).Inc()

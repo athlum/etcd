@@ -328,7 +328,7 @@ func (c *RaftCluster) AddMember(m *Member) {
 
 	c.members[m.ID] = m
 
-	plog.Infof("added member %s %v to cluster %s", m.ID, m.PeerURLs, c.id)
+	plog.Infof("added member %s %v,[trans] %v to cluster %s", m.ID, m.PeerURLs, m.PeerTransURLs, c.id)
 }
 
 // RemoveMember removes a member from the store.
