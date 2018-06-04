@@ -652,6 +652,7 @@ func (s *EtcdServer) ApplyWait() <-chan struct{} { return s.applyWait.Wait(s.get
 type ServerPeer interface {
 	ServerV2
 	RaftHandler() http.Handler
+	TransHandler() http.Handler
 	LeaseHandler() http.Handler
 }
 
