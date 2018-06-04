@@ -78,6 +78,7 @@ func NewMember(name string, peerURLs, peerTransURLs types.URLs, clusterName stri
 
 	hash := sha1.Sum(b)
 	m.ID = types.ID(binary.BigEndian.Uint64(hash[:8]))
+	plog.Infof("NewMember %v, PeerURLs: %v, PeerTransURLs: %v", m.ID, m.PeerURLs, m.PeerTransURLs)
 	return m
 }
 
