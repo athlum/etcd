@@ -49,6 +49,7 @@ func (s *v2v3Server) ClientCertAuthEnabled() bool { return false }
 
 func (s *v2v3Server) LeaseHandler() http.Handler { panic("STUB: lease handler") }
 func (s *v2v3Server) RaftHandler() http.Handler  { panic("STUB: raft handler") }
+func (s *v2v3Server) TransHandler() http.Handler { panic("STUB: trans handler") }
 
 func (s *v2v3Server) Leader() types.ID {
 	ctx, cancel := context.WithTimeout(context.TODO(), 5*time.Second)
