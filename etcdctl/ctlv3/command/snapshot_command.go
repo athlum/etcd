@@ -48,19 +48,21 @@ import (
 )
 
 const (
-	defaultName                     = "default"
-	defaultInitialAdvertisePeerURLs = "http://localhost:2380"
+	defaultName                          = "default"
+	defaultInitialAdvertisePeerURLs      = "http://localhost:2380"
+	defaultInitialAdvertisePeerTransURLs = "http://localhost:2381"
 )
 
 var (
-	restoreCluster      string
-	restoreClusterTrans string
-	restoreClusterToken string
-	restoreDataDir      string
-	restoreWalDir       string
-	restorePeerURLs     string
-	restoreName         string
-	skipHashCheck       bool
+	restoreCluster       string
+	restoreClusterTrans  string
+	restoreClusterToken  string
+	restoreDataDir       string
+	restoreWalDir        string
+	restorePeerURLs      string
+	restoreTransPeerURLs string
+	restoreName          string
+	skipHashCheck        bool
 )
 
 // NewSnapshotCommand returns the cobra command for "snapshot".
@@ -106,6 +108,7 @@ func NewSnapshotRestoreCommand() *cobra.Command {
 	cmd.Flags().StringVar(&restoreClusterTrans, "initial-trans-cluster", initialTransClusterFromName(defaultName), "Initial trans cluster configuration for restore bootstrap")
 	cmd.Flags().StringVar(&restoreClusterToken, "initial-cluster-token", "etcd-cluster", "Initial cluster token for the etcd cluster during restore bootstrap")
 	cmd.Flags().StringVar(&restorePeerURLs, "initial-advertise-peer-urls", defaultInitialAdvertisePeerURLs, "List of this member's peer URLs to advertise to the rest of the cluster")
+	cmd.Flags().StringVar(&restorePeerTransURLs, "initial-advertise-peer-trans-urls", defaultInitialAdvertisePeerTransURLs, "List of this member's peer URLs to advertise trans to the rest of the cluster")
 	cmd.Flags().StringVar(&restoreName, "name", defaultName, "Human-readable name for this member")
 	cmd.Flags().BoolVar(&skipHashCheck, "skip-hash-check", false, "Ignore snapshot integrity hash value (required if copied from data directory)")
 
@@ -171,17 +174,24 @@ func snapshotRestoreCommandFunc(cmd *cobra.Command, args []string) {
 		ExitWithError(ExitBadArgs, uerr)
 	}
 
+	tUrlmap, uerr := types.NewURLsMap(restoreClusterTrans)
+	if uerr != nil {
+		ExitWithError(ExitBadArgs, uerr)
+	}
+
 	cfg := etcdserver.ServerConfig{
-		InitialClusterToken: restoreClusterToken,
-		InitialPeerURLsMap:  urlmap,
-		PeerURLs:            types.MustNewURLs(strings.Split(restorePeerURLs, ",")),
-		Name:                restoreName,
+		InitialClusterToken:     restoreClusterToken,
+		InitialPeerURLsMap:      urlmap,
+		InitialPeerTransURLsMap: tUrlmap,
+		PeerURLs:                types.MustNewURLs(strings.Split(restorePeerURLs, ",")),
+		PeerTransURLs:           types.MustNewURLs(strings.Split(restorePeerTransURLs, ",")),
+		Name:                    restoreName,
 	}
 	if err := cfg.VerifyBootstrap(); err != nil {
 		ExitWithError(ExitBadArgs, err)
 	}
 
-	cl, cerr := membership.NewClusterFromURLsMap(restoreClusterToken, urlmap)
+	cl, cerr := membership.NewClusterFromURLsMap(restoreClusterToken, urlmap, tUrlmap)
 	if cerr != nil {
 		ExitWithError(ExitBadArgs, cerr)
 	}

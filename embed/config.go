@@ -174,7 +174,7 @@ type Config struct {
 	Dproxy                  string `json:"discovery-proxy"`
 	Durl                    string `json:"discovery"`
 	InitialCluster          string `json:"initial-cluster"`
-	InitialClusterTrans     string `json:"initial-cluster-heartbeat"`
+	InitialClusterTrans     string `json:"initial-cluster-trans"`
 	InitialClusterToken     string `json:"initial-cluster-token"`
 	StrictReconfigCheck     bool   `json:"strict-reconfig-check"`
 	EnableV2                bool   `json:"enable-v2"`
@@ -233,11 +233,11 @@ type configYAML struct {
 // configJSON has file options that are translated into Config options
 type configJSON struct {
 	LPUrlsJSON         string         `json:"listen-peer-urls"`
-	LPTUrlsJSON        string         `json:"listen-peer-heartbeat-urls"`
+	LPTUrlsJSON        string         `json:"listen-peer-trans-urls"`
 	LCUrlsJSON         string         `json:"listen-client-urls"`
 	CorsJSON           string         `json:"cors"`
 	APUrlsJSON         string         `json:"initial-advertise-peer-urls"`
-	APTUrlsJSON        string         `json:"initial-advertise-peer-heartbeat-urls"`
+	APTUrlsJSON        string         `json:"initial-advertise-peer-trans-urls"`
 	ACUrlsJSON         string         `json:"advertise-client-urls"`
 	ClientSecurityJSON securityConfig `json:"client-transport-security"`
 	PeerSecurityJSON   securityConfig `json:"peer-transport-security"`
@@ -379,7 +379,7 @@ func (cfg *configYAML) configFromFile(path string) error {
 	if cfg.LPTUrlsJSON != "" {
 		u, err := types.NewURLs(strings.Split(cfg.LPTUrlsJSON, ","))
 		if err != nil {
-			plog.Fatalf("unexpected error setting up listen-peer-heartbeat-urls: %v", err)
+			plog.Fatalf("unexpected error setting up listen-peer-trans-urls: %v", err)
 		}
 		cfg.LPTUrls = []url.URL(u)
 	}
@@ -409,7 +409,7 @@ func (cfg *configYAML) configFromFile(path string) error {
 	if cfg.APTUrlsJSON != "" {
 		u, err := types.NewURLs(strings.Split(cfg.APTUrlsJSON, ","))
 		if err != nil {
-			plog.Fatalf("unexpected error setting up initial-advertise-peer-heartbeat-urls: %v", err)
+			plog.Fatalf("unexpected error setting up initial-advertise-peer-trans-urls: %v", err)
 		}
 		cfg.APTUrls = []url.URL(u)
 	}
@@ -481,7 +481,7 @@ func (cfg *Config) Validate() error {
 		for i := range cfg.APTUrls {
 			addrs[i] = cfg.APTUrls[i].String()
 		}
-		plog.Warningf("advertise-peer-heartbeat-urls %q is deprecated (%v)", strings.Join(addrs, ","), err)
+		plog.Warningf("advertise-peer-trans-urls %q is deprecated (%v)", strings.Join(addrs, ","), err)
 	}
 	if err := checkHostURLs(cfg.ACUrls); err != nil {
 		// TODO: return err in v3.4

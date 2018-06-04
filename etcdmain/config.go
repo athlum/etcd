@@ -151,7 +151,7 @@ func newConfig() *config {
 
 	// clustering
 	fs.Var(flags.NewURLsValue(embed.DefaultInitialAdvertisePeerURLs), "initial-advertise-peer-urls", "List of this member's peer URLs to advertise to the rest of the cluster.")
-	fs.Var(flags.NewURLsValue(embed.DefaultInitialAdvertisePeerTransURLs), "initial-advertise-peer-trans-urls", "List of this member's peer URLs to advertise heartbeat to the rest of the cluster.")
+	fs.Var(flags.NewURLsValue(embed.DefaultInitialAdvertisePeerTransURLs), "initial-advertise-peer-trans-urls", "List of this member's peer URLs to advertise trans to the rest of the cluster.")
 	fs.Var(flags.NewURLsValue(embed.DefaultAdvertiseClientURLs), "advertise-client-urls", "List of this member's client URLs to advertise to the public.")
 	fs.StringVar(&cfg.ec.Durl, "discovery", cfg.ec.Durl, "Discovery URL used to bootstrap the cluster.")
 	fs.Var(cfg.cf.fallback, "discovery-fallback", fmt.Sprintf("Valid values include %s", strings.Join(cfg.cf.fallback.Values, ", ")))
