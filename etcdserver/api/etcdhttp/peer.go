@@ -33,6 +33,10 @@ func NewPeerHandler(s etcdserver.ServerPeer) http.Handler {
 	return newPeerHandler(s.Cluster(), s.RaftHandler(), s.LeaseHandler())
 }
 
+func NewPeerTransHandler(s etcdserver.ServerPeer) http.Handler {
+	return newPeerHandler(s.Cluster(), s.TransHandler(), s.LeaseHandler())
+}
+
 func newPeerHandler(cluster api.Cluster, raftHandler http.Handler, leaseHandler http.Handler) http.Handler {
 	mh := &peerMembersHandler{
 		cluster: cluster,

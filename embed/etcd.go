@@ -378,15 +378,14 @@ func _startPeerListeners(cfg *Config, us []url.URL) (peers []*peerListener, err 
 
 // configure peer handlers after rafthttp.Transport started
 func (e *Etcd) servePeers() (err error) {
-	return e._serverPeers(e.Peers)
+	return e._serverPeers(e.Peers, etcdhttp.NewPeerHandler(e.Server))
 }
 
 func (e *Etcd) servePeersTrans() (err error) {
-	return e._serverPeers(e.TransPeers)
+	return e._serverPeers(e.TransPeers, etcdhttp.NewPeerTransHandler(e.Server))
 }
 
-func (e *Etcd) _serverPeers(ps []*peerListener) (err error) {
-	ph := etcdhttp.NewPeerHandler(e.Server)
+func (e *Etcd) _serverPeers(ps []*peerListener, ph http.Handler) (err error) {
 	var peerTLScfg *tls.Config
 	if !e.cfg.PeerTLSInfo.Empty() {
 		if peerTLScfg, err = e.cfg.PeerTLSInfo.ServerConfig(); err != nil {

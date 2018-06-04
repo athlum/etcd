@@ -664,6 +664,8 @@ func (s *EtcdServer) LeaseHandler() http.Handler {
 
 func (s *EtcdServer) RaftHandler() http.Handler { return s.r.transport.Handler() }
 
+func (s *EtcdServer) TransHandler() http.Handler { return s.r.transport.TransHandler() }
+
 // Process takes a raft message and applies it to the server's raft state
 // machine, respecting any timeout of the given context.
 func (s *EtcdServer) Process(ctx context.Context, m raftpb.Message) error {

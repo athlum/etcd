@@ -34,6 +34,10 @@ func (t *routedTransporter) Handler() http.Handler {
 	return t.transporter.Handler()
 }
 
+func (t *routedTransporter) TransHandler() http.Handler {
+	return t.tranTransporter.Handler()
+}
+
 func (t *routedTransporter) Send(m []raftpb.Message) {
 	nm := []raftpb.Message{}
 	sm := []raftpb.Message{}
