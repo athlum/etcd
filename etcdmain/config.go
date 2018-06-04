@@ -132,6 +132,7 @@ func newConfig() *config {
 	fs.StringVar(&cfg.ec.Dir, "data-dir", cfg.ec.Dir, "Path to the data directory.")
 	fs.StringVar(&cfg.ec.WalDir, "wal-dir", cfg.ec.WalDir, "Path to the dedicated wal directory.")
 	fs.Var(flags.NewURLsValue(embed.DefaultListenPeerURLs), "listen-peer-urls", "List of URLs to listen on for peer traffic.")
+	fs.Var(flags.NewURLsValue(embed.DefaultListenPeerTransURLs), "listen-peer-trans-urls", "List of URLs to listen on for peer traffic.")
 	fs.Var(flags.NewURLsValue(embed.DefaultListenClientURLs), "listen-client-urls", "List of URLs to listen on for client traffic.")
 	fs.StringVar(&cfg.ec.ListenMetricsUrlsJSON, "listen-metrics-urls", "", "List of URLs to listen on for metrics.")
 	fs.UintVar(&cfg.ec.MaxSnapFiles, "max-snapshots", cfg.ec.MaxSnapFiles, "Maximum number of snapshot files to retain (0 is unlimited).")
@@ -150,6 +151,7 @@ func newConfig() *config {
 
 	// clustering
 	fs.Var(flags.NewURLsValue(embed.DefaultInitialAdvertisePeerURLs), "initial-advertise-peer-urls", "List of this member's peer URLs to advertise to the rest of the cluster.")
+	fs.Var(flags.NewURLsValue(embed.DefaultInitialAdvertisePeerTransURLs), "initial-advertise-peer-trans-urls", "List of this member's peer URLs to advertise heartbeat to the rest of the cluster.")
 	fs.Var(flags.NewURLsValue(embed.DefaultAdvertiseClientURLs), "advertise-client-urls", "List of this member's client URLs to advertise to the public.")
 	fs.StringVar(&cfg.ec.Durl, "discovery", cfg.ec.Durl, "Discovery URL used to bootstrap the cluster.")
 	fs.Var(cfg.cf.fallback, "discovery-fallback", fmt.Sprintf("Valid values include %s", strings.Join(cfg.cf.fallback.Values, ", ")))
@@ -157,6 +159,7 @@ func newConfig() *config {
 	fs.StringVar(&cfg.ec.Dproxy, "discovery-proxy", cfg.ec.Dproxy, "HTTP proxy to use for traffic to discovery service.")
 	fs.StringVar(&cfg.ec.DNSCluster, "discovery-srv", cfg.ec.DNSCluster, "DNS domain used to bootstrap initial cluster.")
 	fs.StringVar(&cfg.ec.InitialCluster, "initial-cluster", cfg.ec.InitialCluster, "Initial cluster configuration for bootstrapping.")
+	fs.StringVar(&cfg.ec.InitialClusterTrans, "initial-cluster-trans", cfg.ec.InitialClusterTrans, "Initial trans cluster configuration for bootstrapping.")
 	fs.StringVar(&cfg.ec.InitialClusterToken, "initial-cluster-token", cfg.ec.InitialClusterToken, "Initial cluster token for the etcd cluster during bootstrap.")
 	fs.Var(cfg.cf.clusterState, "initial-cluster-state", "Initial cluster state ('new' or 'existing').")
 
@@ -263,7 +266,9 @@ func (cfg *config) configFromCmdLine() error {
 	}
 
 	cfg.ec.LPUrls = flags.URLsFromFlag(cfg.cf.flagSet, "listen-peer-urls")
+	cfg.ec.LPTUrls = flags.URLsFromFlag(cfg.cf.flagSet, "listen-peer-trans-urls")
 	cfg.ec.APUrls = flags.URLsFromFlag(cfg.cf.flagSet, "initial-advertise-peer-urls")
+	cfg.ec.APTUrls = flags.URLsFromFlag(cfg.cf.flagSet, "initial-advertise-peer-trans-urls")
 	cfg.ec.LCUrls = flags.URLsFromFlag(cfg.cf.flagSet, "listen-client-urls")
 	cfg.ec.ACUrls = flags.URLsFromFlag(cfg.cf.flagSet, "advertise-client-urls")
 
@@ -286,8 +291,13 @@ func (cfg *config) configFromCmdLine() error {
 	}
 
 	// disable default initial-cluster if discovery is set
-	if (cfg.ec.Durl != "" || cfg.ec.DNSCluster != "") && !flags.IsSet(cfg.cf.flagSet, "initial-cluster") {
-		cfg.ec.InitialCluster = ""
+	if cfg.ec.Durl != "" || cfg.ec.DNSCluster != "" {
+		if !flags.IsSet(cfg.cf.flagSet, "initial-cluster") {
+			cfg.ec.InitialCluster = ""
+		}
+		if !flags.IsSet(cfg.cf.flagSet, "initial-cluster-trans") {
+			cfg.ec.InitialClusterTrans = ""
+		}
 	}
 
 	return cfg.validate()

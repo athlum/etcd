@@ -29,7 +29,6 @@ import (
 	"github.com/coreos/etcd/pkg/types"
 	"github.com/coreos/etcd/raft"
 	"github.com/coreos/etcd/raft/raftpb"
-	"github.com/coreos/etcd/rafthttp"
 	"github.com/coreos/etcd/wal"
 	"github.com/coreos/etcd/wal/walpb"
 	"github.com/coreos/pkg/capnslog"
@@ -127,7 +126,7 @@ type raftNodeConfig struct {
 	// Sending messages MUST NOT block. It is okay to drop messages, since
 	// clients should timeout and reissue their messages.
 	// If transport is nil, server will panic.
-	transport rafthttp.Transporter
+	transport *routedTransporter
 }
 
 func newRaftNode(cfg raftNodeConfig) *raftNode {
@@ -373,13 +372,11 @@ func (r *raftNode) onStop() {
 
 // for testing
 func (r *raftNode) pauseSending() {
-	p := r.transport.(rafthttp.Pausable)
-	p.Pause()
+	r.transport.Pause()
 }
 
 func (r *raftNode) resumeSending() {
-	p := r.transport.(rafthttp.Pausable)
-	p.Resume()
+	r.transport.Resume()
 }
 
 // advanceTicks advances ticks of Raft node.

@@ -44,8 +44,13 @@ func (cs *ClusterServer) MemberAdd(ctx context.Context, r *pb.MemberAddRequest) 
 		return nil, rpctypes.ErrGRPCMemberBadURLs
 	}
 
+	tUrls, err := types.NewURLs(r.PeerTransURLs)
+	if err != nil {
+		return nil, rpctypes.ErrGRPCMemberBadURLs
+	}
+
 	now := time.Now()
-	m := membership.NewMember("", urls, "", &now)
+	m := membership.NewMember("", urls, tUrls, "", &now)
 	membs, merr := cs.server.AddMember(ctx, *m)
 	if merr != nil {
 		return nil, togRPCError(merr)

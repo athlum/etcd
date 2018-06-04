@@ -32,7 +32,6 @@ import (
 	"github.com/coreos/etcd/alarm"
 	"github.com/coreos/etcd/auth"
 	"github.com/coreos/etcd/compactor"
-	"github.com/coreos/etcd/discovery"
 	"github.com/coreos/etcd/etcdserver/api"
 	"github.com/coreos/etcd/etcdserver/api/v2http/httptypes"
 	pb "github.com/coreos/etcd/etcdserver/etcdserverpb"
@@ -305,7 +304,7 @@ func NewServer(cfg ServerConfig) (srv *EtcdServer, err error) {
 		if err = cfg.VerifyJoinExisting(); err != nil {
 			return nil, err
 		}
-		cl, err = membership.NewClusterFromURLsMap(cfg.InitialClusterToken, cfg.InitialPeerURLsMap)
+		cl, err = membership.NewClusterFromURLsMap(cfg.InitialClusterToken, cfg.InitialPeerURLsMap, cfg.InitialPeerTransURLsMap)
 		if err != nil {
 			return nil, err
 		}
@@ -330,7 +329,7 @@ func NewServer(cfg ServerConfig) (srv *EtcdServer, err error) {
 		if err = cfg.VerifyBootstrap(); err != nil {
 			return nil, err
 		}
-		cl, err = membership.NewClusterFromURLsMap(cfg.InitialClusterToken, cfg.InitialPeerURLsMap)
+		cl, err = membership.NewClusterFromURLsMap(cfg.InitialClusterToken, cfg.InitialPeerURLsMap, cfg.InitialPeerTransURLsMap)
 		if err != nil {
 			return nil, err
 		}
@@ -338,24 +337,25 @@ func NewServer(cfg ServerConfig) (srv *EtcdServer, err error) {
 		if isMemberBootstrapped(cl, cfg.Name, prt, cfg.bootstrapTimeout()) {
 			return nil, fmt.Errorf("member %s has already been bootstrapped", m.ID)
 		}
-		if cfg.ShouldDiscover() {
-			var str string
-			str, err = discovery.JoinCluster(cfg.DiscoveryURL, cfg.DiscoveryProxy, m.ID, cfg.InitialPeerURLsMap.String())
-			if err != nil {
-				return nil, &DiscoveryError{Op: "join", Err: err}
-			}
-			var urlsmap types.URLsMap
-			urlsmap, err = types.NewURLsMap(str)
-			if err != nil {
-				return nil, err
-			}
-			if checkDuplicateURL(urlsmap) {
-				return nil, fmt.Errorf("discovery cluster %s has duplicate url", urlsmap)
-			}
-			if cl, err = membership.NewClusterFromURLsMap(cfg.InitialClusterToken, urlsmap); err != nil {
-				return nil, err
-			}
-		}
+		// ignore discover
+		// if cfg.ShouldDiscover() {
+		// 	var str string
+		// 	str, err = discovery.JoinCluster(cfg.DiscoveryURL, cfg.DiscoveryProxy, m.ID, cfg.InitialPeerURLsMap.String())
+		// 	if err != nil {
+		// 		return nil, &DiscoveryError{Op: "join", Err: err}
+		// 	}
+		// 	var urlsmap types.URLsMap
+		// 	urlsmap, err = types.NewURLsMap(str)
+		// 	if err != nil {
+		// 		return nil, err
+		// 	}
+		// 	if checkDuplicateURL(urlsmap) {
+		// 		return nil, fmt.Errorf("discovery cluster %s has duplicate url", urlsmap)
+		// 	}
+		// 	if cl, err = membership.NewClusterFromURLsMap(cfg.InitialClusterToken, urlsmap); err != nil {
+		// 		return nil, err
+		// 	}
+		// }
 		cl.SetStore(st)
 		cl.SetBackend(be)
 		cfg.PrintWithInitial()
@@ -502,6 +502,18 @@ func NewServer(cfg ServerConfig) (srv *EtcdServer, err error) {
 		LeaderStats: lstats,
 		ErrorC:      srv.errorc,
 	}
+	ttr := &rafthttp.Transport{
+		TLSInfo:     cfg.PeerTLSInfo,
+		DialTimeout: cfg.peerDialTimeout(),
+		ID:          id,
+		URLs:        cfg.PeerTransURLs,
+		ClusterID:   cl.ID(),
+		Raft:        srv,
+		Snapshotter: ss,
+		ServerStats: sstats,
+		LeaderStats: lstats,
+		ErrorC:      srv.errorc,
+	}
 	if err = tr.Start(); err != nil {
 		return nil, err
 	}
@@ -509,14 +521,16 @@ func NewServer(cfg ServerConfig) (srv *EtcdServer, err error) {
 	for _, m := range remotes {
 		if m.ID != id {
 			tr.AddRemote(m.ID, m.PeerURLs)
+			ttr.AddRemote(m.ID, m.PeerTransURLs)
 		}
 	}
 	for _, m := range cl.Members() {
 		if m.ID != id {
 			tr.AddPeer(m.ID, m.PeerURLs)
+			ttr.AddPeer(m.ID, m.PeerTransURLs)
 		}
 	}
-	srv.r.transport = tr
+	srv.r.transport = warppedTransport(tr, ttr)
 
 	return srv, nil
 }
@@ -948,7 +962,7 @@ func (s *EtcdServer) applySnapshot(ep *etcdProgress, apply *apply) {
 		if m.ID == s.ID() {
 			continue
 		}
-		s.r.transport.AddPeer(m.ID, m.PeerURLs)
+		s.r.transport.AddPeer(m.ID, m.PeerURLs, m.PeerTransURLs)
 	}
 	plog.Info("finished adding peers from new cluster configuration into network...")
 
@@ -1030,7 +1044,7 @@ func (s *EtcdServer) TransferLeadership() error {
 		return nil
 	}
 
-	transferee, ok := longestConnected(s.r.transport, s.cluster.MemberIDs())
+	transferee, ok := longestConnected(s.r.transport.Main(), s.cluster.MemberIDs())
 	if !ok {
 		return ErrUnhealthy
 	}
@@ -1128,7 +1142,7 @@ func (s *EtcdServer) AddMember(ctx context.Context, memb membership.Member) ([]*
 			plog.Warningf("not enough started members, rejecting member add %+v", memb)
 			return nil, ErrNotEnoughStartedMembers
 		}
-		if !isConnectedFullySince(s.r.transport, time.Now().Add(-HealthInterval), s.ID(), s.cluster.Members()) {
+		if !isConnectedFullySince(s.r.transport.Main(), time.Now().Add(-HealthInterval), s.ID(), s.cluster.Members()) {
 			plog.Warningf("not healthy for reconfigure, rejecting member add %+v", memb)
 			return nil, ErrUnhealthy
 		}
@@ -1181,7 +1195,7 @@ func (s *EtcdServer) mayRemoveMember(id types.ID) error {
 
 	// protect quorum if some members are down
 	m := s.cluster.Members()
-	active := numConnectedSince(s.r.transport, time.Now().Add(-HealthInterval), s.ID(), m)
+	active := numConnectedSince(s.r.transport.Main(), time.Now().Add(-HealthInterval), s.ID(), m)
 	if (active - 1) < 1+((len(m)-1)/2) {
 		plog.Warningf("reconfigure breaks active quorum, rejecting remove member %s", id)
 		return ErrUnhealthy
@@ -1459,7 +1473,7 @@ func (s *EtcdServer) applyConfChange(cc raftpb.ConfChange, confState *raftpb.Con
 		}
 		s.cluster.AddMember(m)
 		if m.ID != s.id {
-			s.r.transport.AddPeer(m.ID, m.PeerURLs)
+			s.r.transport.AddPeer(m.ID, m.PeerURLs, m.PeerTransURLs)
 		}
 	case raftpb.ConfChangeRemoveNode:
 		id := types.ID(cc.NodeID)
@@ -1478,7 +1492,7 @@ func (s *EtcdServer) applyConfChange(cc raftpb.ConfChange, confState *raftpb.Con
 		}
 		s.cluster.UpdateRaftAttributes(m.ID, m.RaftAttributes)
 		if m.ID != s.id {
-			s.r.transport.UpdatePeer(m.ID, m.PeerURLs)
+			s.r.transport.UpdatePeer(m.ID, m.PeerURLs, m.PeerTransURLs)
 		}
 	}
 	return false, nil
@@ -1548,18 +1562,12 @@ func (s *EtcdServer) snapshot(snapi uint64, confState raftpb.ConfState) {
 
 // CutPeer drops messages to the specified peer.
 func (s *EtcdServer) CutPeer(id types.ID) {
-	tr, ok := s.r.transport.(*rafthttp.Transport)
-	if ok {
-		tr.CutPeer(id)
-	}
+	s.r.transport.CutPeer(id)
 }
 
 // MendPeer recovers the message dropping behavior of the given peer.
 func (s *EtcdServer) MendPeer(id types.ID) {
-	tr, ok := s.r.transport.(*rafthttp.Transport)
-	if ok {
-		tr.MendPeer(id)
-	}
+	s.r.transport.MendPeer(id)
 }
 
 func (s *EtcdServer) PauseSending() { s.r.pauseSending() }
@@ -1662,11 +1670,11 @@ func (s *EtcdServer) parseProposeCtxErr(err error, start time.Time) error {
 		case types.ID(raft.None):
 			// TODO: return error to specify it happens because the cluster does not have leader now
 		case s.ID():
-			if !isConnectedToQuorumSince(s.r.transport, start, s.ID(), s.cluster.Members()) {
+			if !isConnectedToQuorumSince(s.r.transport.Main(), start, s.ID(), s.cluster.Members()) {
 				return ErrTimeoutDueToConnectionLost
 			}
 		default:
-			if !isConnectedSince(s.r.transport, start, lead) {
+			if !isConnectedSince(s.r.transport.Main(), start, lead) {
 				return ErrTimeoutDueToConnectionLost
 			}
 		}

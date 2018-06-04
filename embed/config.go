@@ -53,8 +53,9 @@ const (
 	DefaultGRPCKeepAliveInterval = 2 * time.Hour
 	DefaultGRPCKeepAliveTimeout  = 20 * time.Second
 
-	DefaultListenPeerURLs   = "http://localhost:2380"
-	DefaultListenClientURLs = "http://localhost:2379"
+	DefaultListenPeerURLs      = "http://localhost:2380"
+	DefaultListenPeerTransURLs = "http://localhost:2381"
+	DefaultListenClientURLs    = "http://localhost:2379"
 
 	DefaultLogOutput = "default"
 
@@ -76,8 +77,9 @@ var (
 		"Choose one of \"initial-cluster\", \"discovery\" or \"discovery-srv\"")
 	ErrUnsetAdvertiseClientURLsFlag = fmt.Errorf("--advertise-client-urls is required when --listen-client-urls is set explicitly")
 
-	DefaultInitialAdvertisePeerURLs = "http://localhost:2380"
-	DefaultAdvertiseClientURLs      = "http://localhost:2379"
+	DefaultInitialAdvertisePeerURLs      = "http://localhost:2380"
+	DefaultInitialAdvertisePeerTransURLs = "http://localhost:2381"
+	DefaultAdvertiseClientURLs           = "http://localhost:2379"
 
 	defaultHostname   string
 	defaultHostStatus error
@@ -91,14 +93,14 @@ func init() {
 type Config struct {
 	// member
 
-	CorsInfo       *cors.CORSInfo
-	LPUrls, LCUrls []url.URL
-	Dir            string `json:"data-dir"`
-	WalDir         string `json:"wal-dir"`
-	MaxSnapFiles   uint   `json:"max-snapshots"`
-	MaxWalFiles    uint   `json:"max-wals"`
-	Name           string `json:"name"`
-	SnapCount      uint64 `json:"snapshot-count"`
+	CorsInfo                *cors.CORSInfo
+	LPUrls, LPTUrls, LCUrls []url.URL
+	Dir                     string `json:"data-dir"`
+	WalDir                  string `json:"wal-dir"`
+	MaxSnapFiles            uint   `json:"max-snapshots"`
+	MaxWalFiles             uint   `json:"max-wals"`
+	Name                    string `json:"name"`
+	SnapCount               uint64 `json:"snapshot-count"`
 
 	// AutoCompactionMode is either 'periodic' or 'revision'.
 	AutoCompactionMode string `json:"auto-compaction-mode"`
@@ -166,15 +168,16 @@ type Config struct {
 
 	// clustering
 
-	APUrls, ACUrls      []url.URL
-	ClusterState        string `json:"initial-cluster-state"`
-	DNSCluster          string `json:"discovery-srv"`
-	Dproxy              string `json:"discovery-proxy"`
-	Durl                string `json:"discovery"`
-	InitialCluster      string `json:"initial-cluster"`
-	InitialClusterToken string `json:"initial-cluster-token"`
-	StrictReconfigCheck bool   `json:"strict-reconfig-check"`
-	EnableV2            bool   `json:"enable-v2"`
+	APUrls, APTUrls, ACUrls []url.URL
+	ClusterState            string `json:"initial-cluster-state"`
+	DNSCluster              string `json:"discovery-srv"`
+	Dproxy                  string `json:"discovery-proxy"`
+	Durl                    string `json:"discovery"`
+	InitialCluster          string `json:"initial-cluster"`
+	InitialClusterTrans     string `json:"initial-cluster-heartbeat"`
+	InitialClusterToken     string `json:"initial-cluster-token"`
+	StrictReconfigCheck     bool   `json:"strict-reconfig-check"`
+	EnableV2                bool   `json:"enable-v2"`
 
 	// security
 
@@ -230,9 +233,11 @@ type configYAML struct {
 // configJSON has file options that are translated into Config options
 type configJSON struct {
 	LPUrlsJSON         string         `json:"listen-peer-urls"`
+	LPTUrlsJSON        string         `json:"listen-peer-heartbeat-urls"`
 	LCUrlsJSON         string         `json:"listen-client-urls"`
 	CorsJSON           string         `json:"cors"`
 	APUrlsJSON         string         `json:"initial-advertise-peer-urls"`
+	APTUrlsJSON        string         `json:"initial-advertise-peer-heartbeat-urls"`
 	ACUrlsJSON         string         `json:"advertise-client-urls"`
 	ClientSecurityJSON securityConfig `json:"client-transport-security"`
 	PeerSecurityJSON   securityConfig `json:"peer-transport-security"`
@@ -250,6 +255,8 @@ type securityConfig struct {
 // NewConfig creates a new Config populated with default values.
 func NewConfig() *Config {
 	lpurl, _ := url.Parse(DefaultListenPeerURLs)
+	lpturl, _ := url.Parse(DefaultListenPeerTransURLs)
+	apturl, _ := url.Parse(DefaultInitialAdvertisePeerTransURLs)
 	apurl, _ := url.Parse(DefaultInitialAdvertisePeerURLs)
 	lcurl, _ := url.Parse(DefaultListenClientURLs)
 	acurl, _ := url.Parse(DefaultAdvertiseClientURLs)
@@ -268,8 +275,10 @@ func NewConfig() *Config {
 		ElectionMs:                 1000,
 		InitialElectionTickAdvance: true,
 		LPUrls:              []url.URL{*lpurl},
+		LPTUrls:             []url.URL{*lpturl},
 		LCUrls:              []url.URL{*lcurl},
 		APUrls:              []url.URL{*apurl},
+		APTUrls:             []url.URL{*apturl},
 		ACUrls:              []url.URL{*acurl},
 		ClusterState:        ClusterStateFlagNew,
 		InitialClusterToken: "etcd-cluster",
@@ -280,6 +289,7 @@ func NewConfig() *Config {
 		AuthToken:           "simple",
 	}
 	cfg.InitialCluster = cfg.InitialClusterFromName(cfg.Name)
+	cfg.InitialClusterTrans = cfg.InitialClusterTransFromName(cfg.Name)
 	return cfg
 }
 
@@ -351,6 +361,7 @@ func (cfg *configYAML) configFromFile(path string) error {
 	}
 
 	defaultInitialCluster := cfg.InitialCluster
+	defaultInitialClusterTrans := cfg.InitialClusterTrans
 
 	err = yaml.Unmarshal(b, cfg)
 	if err != nil {
@@ -363,6 +374,14 @@ func (cfg *configYAML) configFromFile(path string) error {
 			plog.Fatalf("unexpected error setting up listen-peer-urls: %v", err)
 		}
 		cfg.LPUrls = []url.URL(u)
+	}
+
+	if cfg.LPTUrlsJSON != "" {
+		u, err := types.NewURLs(strings.Split(cfg.LPTUrlsJSON, ","))
+		if err != nil {
+			plog.Fatalf("unexpected error setting up listen-peer-heartbeat-urls: %v", err)
+		}
+		cfg.LPTUrls = []url.URL(u)
 	}
 
 	if cfg.LCUrlsJSON != "" {
@@ -387,6 +406,14 @@ func (cfg *configYAML) configFromFile(path string) error {
 		cfg.APUrls = []url.URL(u)
 	}
 
+	if cfg.APTUrlsJSON != "" {
+		u, err := types.NewURLs(strings.Split(cfg.APTUrlsJSON, ","))
+		if err != nil {
+			plog.Fatalf("unexpected error setting up initial-advertise-peer-heartbeat-urls: %v", err)
+		}
+		cfg.APTUrls = []url.URL(u)
+	}
+
 	if cfg.ACUrlsJSON != "" {
 		u, err := types.NewURLs(strings.Split(cfg.ACUrlsJSON, ","))
 		if err != nil {
@@ -404,8 +431,11 @@ func (cfg *configYAML) configFromFile(path string) error {
 	}
 
 	// If a discovery flag is set, clear default initial cluster set by InitialClusterFromName
-	if (cfg.Durl != "" || cfg.DNSCluster != "") && cfg.InitialCluster == defaultInitialCluster {
-		cfg.InitialCluster = ""
+	if cfg.Durl != "" || cfg.DNSCluster != "" {
+		if cfg.InitialCluster == defaultInitialCluster || cfg.InitialClusterTrans == defaultInitialClusterTrans {
+			cfg.InitialCluster = ""
+			cfg.InitialClusterTrans = ""
+		}
 	}
 	if cfg.ClusterState == "" {
 		cfg.ClusterState = ClusterStateFlagNew
@@ -445,6 +475,14 @@ func (cfg *Config) Validate() error {
 		}
 		plog.Warningf("advertise-peer-urls %q is deprecated (%v)", strings.Join(addrs, ","), err)
 	}
+	if err := checkHostURLs(cfg.APTUrls); err != nil {
+		// TODO: return err in v3.4
+		addrs := make([]string, len(cfg.APTUrls))
+		for i := range cfg.APTUrls {
+			addrs[i] = cfg.APTUrls[i].String()
+		}
+		plog.Warningf("advertise-peer-heartbeat-urls %q is deprecated (%v)", strings.Join(addrs, ","), err)
+	}
 	if err := checkHostURLs(cfg.ACUrls); err != nil {
 		// TODO: return err in v3.4
 		addrs := make([]string, len(cfg.ACUrls))
@@ -456,7 +494,7 @@ func (cfg *Config) Validate() error {
 
 	// Check if conflicting flags are passed.
 	nSet := 0
-	for _, v := range []bool{cfg.Durl != "", cfg.InitialCluster != "", cfg.DNSCluster != ""} {
+	for _, v := range []bool{cfg.Durl != "", cfg.InitialCluster != "" && cfg.InitialClusterTrans != "", cfg.DNSCluster != ""} {
 		if v {
 			nSet++
 		}
@@ -498,18 +536,17 @@ func (cfg *Config) Validate() error {
 	return nil
 }
 
-// PeerURLsMapAndToken sets up an initial peer URLsMap and cluster token for bootstrap or discovery.
-func (cfg *Config) PeerURLsMapAndToken(which string) (urlsmap types.URLsMap, token string, err error) {
+func (cfg *Config) loadURLsMapAndToken(which string, us []url.URL, ustr string) (urlsmap types.URLsMap, token string, err error) {
 	token = cfg.InitialClusterToken
 	switch {
 	case cfg.Durl != "":
 		urlsmap = types.URLsMap{}
 		// If using discovery, generate a temporary cluster based on
 		// self's advertised peer URLs
-		urlsmap[cfg.Name] = cfg.APUrls
+		urlsmap[cfg.Name] = us
 		token = cfg.Durl
 	case cfg.DNSCluster != "":
-		clusterStrs, cerr := srv.GetCluster("etcd-server", cfg.Name, cfg.DNSCluster, cfg.APUrls)
+		clusterStrs, cerr := srv.GetCluster("etcd-server", cfg.Name, cfg.DNSCluster, us)
 		if cerr != nil {
 			plog.Errorf("couldn't resolve during SRV discovery (%v)", cerr)
 			return nil, "", cerr
@@ -531,23 +568,40 @@ func (cfg *Config) PeerURLsMapAndToken(which string) (urlsmap types.URLsMap, tok
 		}
 	default:
 		// We're statically configured, and cluster has appropriately been set.
-		urlsmap, err = types.NewURLsMap(cfg.InitialCluster)
+		urlsmap, err = types.NewURLsMap(ustr)
 	}
 	return urlsmap, token, err
 }
 
-func (cfg Config) InitialClusterFromName(name string) (ret string) {
-	if len(cfg.APUrls) == 0 {
+// PeerURLsMapAndToken sets up an initial peer URLsMap and cluster token for bootstrap or discovery.
+func (cfg *Config) PeerURLsMapAndToken(which string) (urlsmap types.URLsMap, token string, err error) {
+	return cfg.loadURLsMapAndToken(which, cfg.APUrls, cfg.InitialCluster)
+}
+
+func (cfg *Config) PeerTransURLsMapAndToken(which string) (urlsmap types.URLsMap, token string, err error) {
+	return cfg.loadURLsMapAndToken(which, cfg.APTUrls, cfg.InitialClusterTrans)
+}
+
+func (cfg Config) initialClusterFromUrls(name string, us []url.URL) (ret string) {
+	if len(us) == 0 {
 		return ""
 	}
 	n := name
 	if name == "" {
 		n = DefaultName
 	}
-	for i := range cfg.APUrls {
-		ret = ret + "," + n + "=" + cfg.APUrls[i].String()
+	for _, u := range us {
+		ret = ret + "," + n + "=" + u.String()
 	}
 	return ret[1:]
+}
+
+func (cfg Config) InitialClusterFromName(name string) (ret string) {
+	return cfg.initialClusterFromUrls(name, cfg.APUrls)
+}
+
+func (cfg Config) InitialClusterTransFromName(name string) (ret string) {
+	return cfg.initialClusterFromUrls(name, cfg.APTUrls)
 }
 
 func (cfg Config) IsNewCluster() bool { return cfg.ClusterState == ClusterStateFlagNew }
@@ -555,6 +609,10 @@ func (cfg Config) ElectionTicks() int { return int(cfg.ElectionMs / cfg.TickMs) 
 
 func (cfg Config) defaultPeerHost() bool {
 	return len(cfg.APUrls) == 1 && cfg.APUrls[0].String() == DefaultInitialAdvertisePeerURLs
+}
+
+func (cfg Config) defaultPeerTransHost() bool {
+	return len(cfg.APTUrls) == 1 && cfg.APTUrls[0].String() == DefaultInitialAdvertisePeerTransURLs
 }
 
 func (cfg Config) defaultClientHost() bool {
@@ -597,11 +655,16 @@ func (cfg *Config) PeerSelfCert() (err error) {
 // User can work around this by explicitly setting URL with 127.0.0.1.
 // It returns the default hostname, if used, and the error, if any, from getting the machine's default host.
 // TODO: check whether fields are set instead of whether fields have default value
-func (cfg *Config) UpdateDefaultClusterFromName(defaultInitialCluster string) (string, error) {
+func (cfg *Config) UpdateDefaultClusterFromName(defaultInitialCluster, defaultInitialClusterTrans string) (string, error) {
 	if defaultHostname == "" || defaultHostStatus != nil {
 		// update 'initial-cluster' when only the name is specified (e.g. 'etcd --name=abc')
-		if cfg.Name != DefaultName && cfg.InitialCluster == defaultInitialCluster {
-			cfg.InitialCluster = cfg.InitialClusterFromName(cfg.Name)
+		if cfg.Name != DefaultName {
+			if cfg.InitialCluster == defaultInitialCluster {
+				cfg.InitialCluster = cfg.InitialClusterFromName(cfg.Name)
+			}
+			if cfg.InitialClusterTrans == defaultInitialClusterTrans {
+				cfg.InitialClusterTrans = cfg.InitialClusterTransFromName(cfg.Name)
+			}
 		}
 		return "", defaultHostStatus
 	}
@@ -612,9 +675,20 @@ func (cfg *Config) UpdateDefaultClusterFromName(defaultInitialCluster string) (s
 		cfg.APUrls[0] = url.URL{Scheme: cfg.APUrls[0].Scheme, Host: fmt.Sprintf("%s:%s", defaultHostname, pport)}
 		used = true
 	}
+	phip, phport := cfg.LPTUrls[0].Hostname(), cfg.LPTUrls[0].Port()
+	if cfg.defaultPeerTransHost() && phip == "0.0.0.0" {
+		cfg.APTUrls[0] = url.URL{Scheme: cfg.APTUrls[0].Scheme, Host: fmt.Sprintf("%s:%s", defaultHostname, phport)}
+		used = true
+	}
+
 	// update 'initial-cluster' when only the name is specified (e.g. 'etcd --name=abc')
-	if cfg.Name != DefaultName && cfg.InitialCluster == defaultInitialCluster {
-		cfg.InitialCluster = cfg.InitialClusterFromName(cfg.Name)
+	if cfg.Name != DefaultName {
+		if cfg.InitialCluster == defaultInitialCluster {
+			cfg.InitialCluster = cfg.InitialClusterFromName(cfg.Name)
+		}
+		if cfg.InitialClusterTrans == defaultInitialClusterTrans {
+			cfg.InitialClusterTrans = cfg.InitialClusterTransFromName(cfg.Name)
+		}
 	}
 
 	cip, cport := cfg.LCUrls[0].Hostname(), cfg.LCUrls[0].Port()

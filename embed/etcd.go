@@ -66,8 +66,9 @@ const (
 
 // Etcd contains a running etcd server and its listeners.
 type Etcd struct {
-	Peers   []*peerListener
-	Clients []net.Listener
+	Peers      []*peerListener
+	TransPeers []*peerListener
+	Clients    []net.Listener
 	// a map of contexts for the servers that serves client requests.
 	sctxs            map[string]*serveCtx
 	metricsListeners []net.Listener
@@ -114,6 +115,9 @@ func StartEtcd(inCfg *Config) (e *Etcd, err error) {
 	if e.Peers, err = startPeerListeners(cfg); err != nil {
 		return e, err
 	}
+	if e.TransPeers, err = startPeerTransListeners(cfg); err != nil {
+		return e, err
+	}
 	if e.sctxs, err = startClientListeners(cfg); err != nil {
 		return e, err
 	}
@@ -122,8 +126,9 @@ func StartEtcd(inCfg *Config) (e *Etcd, err error) {
 	}
 
 	var (
-		urlsmap types.URLsMap
-		token   string
+		urlsmap  types.URLsMap
+		tUrlsmap types.URLsMap
+		token    string
 	)
 
 	memberInitialized := true
@@ -132,6 +137,10 @@ func StartEtcd(inCfg *Config) (e *Etcd, err error) {
 		urlsmap, token, err = cfg.PeerURLsMapAndToken("etcd")
 		if err != nil {
 			return e, fmt.Errorf("error setting up initial cluster: %v", err)
+		}
+		tUrlsmap, _, err = cfg.PeerTransURLsMapAndToken("etcd")
+		if err != nil {
+			return e, fmt.Errorf("error setting up initial heartbeat cluster: %v", err)
 		}
 	}
 
@@ -148,12 +157,14 @@ func StartEtcd(inCfg *Config) (e *Etcd, err error) {
 		Name:                       cfg.Name,
 		ClientURLs:                 cfg.ACUrls,
 		PeerURLs:                   cfg.APUrls,
+		PeerTransURLs:              cfg.APTUrls,
 		DataDir:                    cfg.Dir,
 		DedicatedWALDir:            cfg.WalDir,
 		SnapCount:                  cfg.SnapCount,
 		MaxSnapFiles:               cfg.MaxSnapFiles,
 		MaxWALFiles:                cfg.MaxWalFiles,
 		InitialPeerURLsMap:         urlsmap,
+		InitialPeerTransURLsMap:    tUrlsmap,
 		InitialClusterToken:        token,
 		DiscoveryURL:               cfg.Durl,
 		DiscoveryProxy:             cfg.Dproxy,
@@ -196,6 +207,9 @@ func StartEtcd(inCfg *Config) (e *Etcd, err error) {
 	e.Server.Start()
 
 	if err = e.servePeers(); err != nil {
+		return e, err
+	}
+	if err = e.servePeersTrans(); err != nil {
 		return e, err
 	}
 	if err = e.serveClients(); err != nil {
@@ -260,6 +274,13 @@ func (e *Etcd) Close() {
 			cancel()
 		}
 	}
+	for i := range e.TransPeers {
+		if e.TransPeers[i] != nil && e.TransPeers[i].close != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			e.TransPeers[i].close(ctx)
+			cancel()
+		}
+	}
 }
 
 func stopServers(ctx context.Context, ss *servers) {
@@ -302,6 +323,14 @@ func stopServers(ctx context.Context, ss *servers) {
 func (e *Etcd) Err() <-chan error { return e.errc }
 
 func startPeerListeners(cfg *Config) (peers []*peerListener, err error) {
+	return _startPeerListeners(cfg, cfg.LPUrls)
+}
+
+func startPeerTransListeners(cfg *Config) (peers []*peerListener, err error) {
+	return _startPeerListeners(cfg, cfg.LPTUrls)
+}
+
+func _startPeerListeners(cfg *Config, us []url.URL) (peers []*peerListener, err error) {
 	if err = cfg.PeerSelfCert(); err != nil {
 		plog.Fatalf("could not get certs (%v)", err)
 	}
@@ -309,14 +338,14 @@ func startPeerListeners(cfg *Config) (peers []*peerListener, err error) {
 		plog.Infof("peerTLS: %s", cfg.PeerTLSInfo)
 	}
 
-	peers = make([]*peerListener, len(cfg.LPUrls))
+	peers = make([]*peerListener, len(us))
 	defer func() {
 		if err == nil {
 			return
 		}
 		for i := range peers {
 			if peers[i] != nil && peers[i].close != nil {
-				plog.Info("stopping listening for peers on ", cfg.LPUrls[i].String())
+				plog.Info("stopping listening for peers on ", us[i].String())
 				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 				peers[i].close(ctx)
 				cancel()
@@ -324,7 +353,7 @@ func startPeerListeners(cfg *Config) (peers []*peerListener, err error) {
 		}
 	}()
 
-	for i, u := range cfg.LPUrls {
+	for i, u := range us {
 		if u.Scheme == "http" {
 			if !cfg.PeerTLSInfo.Empty() {
 				plog.Warningf("The scheme of peer url %s is HTTP while peer key/cert files are presented. Ignored peer key/cert files.", u.String())
@@ -349,6 +378,14 @@ func startPeerListeners(cfg *Config) (peers []*peerListener, err error) {
 
 // configure peer handlers after rafthttp.Transport started
 func (e *Etcd) servePeers() (err error) {
+	return e._serverPeers(e.Peers)
+}
+
+func (e *Etcd) servePeersTrans() (err error) {
+	return e._serverPeers(e.TransPeers)
+}
+
+func (e *Etcd) _serverPeers(ps []*peerListener) (err error) {
 	ph := etcdhttp.NewPeerHandler(e.Server)
 	var peerTLScfg *tls.Config
 	if !e.cfg.PeerTLSInfo.Empty() {
@@ -357,7 +394,7 @@ func (e *Etcd) servePeers() (err error) {
 		}
 	}
 
-	for _, p := range e.Peers {
+	for _, p := range ps {
 		gs := v3rpc.Server(e.Server, peerTLScfg)
 		m := cmux.New(p.Listener)
 		go gs.Serve(m.Match(cmux.HTTP2()))
@@ -378,7 +415,7 @@ func (e *Etcd) servePeers() (err error) {
 	}
 
 	// start peer servers in a goroutine
-	for _, pl := range e.Peers {
+	for _, pl := range ps {
 		go func(l *peerListener) {
 			e.errHandler(l.serve())
 		}(pl)

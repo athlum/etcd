@@ -34,18 +34,20 @@ type ServerConfig struct {
 	DiscoveryProxy string
 	ClientURLs     types.URLs
 	PeerURLs       types.URLs
+	PeerTransURLs  types.URLs
 	DataDir        string
 	// DedicatedWALDir config will make the etcd to write the WAL to the WALDir
 	// rather than the dataDir/member/wal.
-	DedicatedWALDir     string
-	SnapCount           uint64
-	MaxSnapFiles        uint
-	MaxWALFiles         uint
-	InitialPeerURLsMap  types.URLsMap
-	InitialClusterToken string
-	NewCluster          bool
-	ForceNewCluster     bool
-	PeerTLSInfo         transport.TLSInfo
+	DedicatedWALDir         string
+	SnapCount               uint64
+	MaxSnapFiles            uint
+	MaxWALFiles             uint
+	InitialPeerURLsMap      types.URLsMap
+	InitialPeerTransURLsMap types.URLsMap
+	InitialClusterToken     string
+	NewCluster              bool
+	ForceNewCluster         bool
+	PeerTLSInfo             transport.TLSInfo
 
 	TickMs        uint
 	ElectionTicks int

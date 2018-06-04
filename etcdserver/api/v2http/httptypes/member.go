@@ -30,7 +30,8 @@ type Member struct {
 }
 
 type MemberCreateRequest struct {
-	PeerURLs types.URLs
+	PeerURLs      types.URLs
+	PeerTransURLs types.URLs
 }
 
 type MemberUpdateRequest struct {

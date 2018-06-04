@@ -34,7 +34,8 @@ var (
 type RaftAttributes struct {
 	// PeerURLs is the list of peers in the raft cluster.
 	// TODO(philips): ensure these are URLs
-	PeerURLs []string `json:"peerURLs"`
+	PeerURLs      []string `json:"peerURLs"`
+	PeerTransURLs []string `json:"peerTransURLs"`
 }
 
 // Attributes represents all the non-raft related attributes of an etcd member.
@@ -51,15 +52,22 @@ type Member struct {
 
 // NewMember creates a Member without an ID and generates one based on the
 // cluster name, peer URLs, and time. This is used for bootstrapping/adding new member.
-func NewMember(name string, peerURLs types.URLs, clusterName string, now *time.Time) *Member {
+func NewMember(name string, peerURLs, peerTransURLs types.URLs, clusterName string, now *time.Time) *Member {
 	m := &Member{
-		RaftAttributes: RaftAttributes{PeerURLs: peerURLs.StringSlice()},
-		Attributes:     Attributes{Name: name},
+		RaftAttributes: RaftAttributes{
+			PeerURLs:      peerURLs.StringSlice(),
+			PeerTransURLs: peerTransURLs.StringSlice(),
+		},
+		Attributes: Attributes{Name: name},
 	}
 
 	var b []byte
 	sort.Strings(m.PeerURLs)
 	for _, p := range m.PeerURLs {
+		b = append(b, []byte(p)...)
+	}
+	sort.Strings(m.PeerTransURLs)
+	for _, p := range m.PeerTransURLs {
 		b = append(b, []byte(p)...)
 	}
 
@@ -75,11 +83,14 @@ func NewMember(name string, peerURLs types.URLs, clusterName string, now *time.T
 
 // PickPeerURL chooses a random address from a given Member's PeerURLs.
 // It will panic if there is no PeerURLs available in Member.
-func (m *Member) PickPeerURL() string {
+func (m *Member) PickPeerURL() (string, string) {
 	if len(m.PeerURLs) == 0 {
 		plog.Panicf("member should always have some peer url")
 	}
-	return m.PeerURLs[rand.Intn(len(m.PeerURLs))]
+	if len(m.PeerTransURLs) == 0 {
+		plog.Panicf("member should always have some peer trans url")
+	}
+	return m.PeerURLs[rand.Intn(len(m.PeerURLs))], m.PeerTransURLs[rand.Intn(len(m.PeerTransURLs))]
 }
 
 func (m *Member) Clone() *Member {
@@ -95,6 +106,10 @@ func (m *Member) Clone() *Member {
 	if m.PeerURLs != nil {
 		mm.PeerURLs = make([]string, len(m.PeerURLs))
 		copy(mm.PeerURLs, m.PeerURLs)
+	}
+	if m.PeerTransURLs != nil {
+		mm.PeerTransURLs = make([]string, len(m.PeerTransURLs))
+		copy(mm.PeerTransURLs, mm.PeerTransURLs)
 	}
 	if m.ClientURLs != nil {
 		mm.ClientURLs = make([]string, len(m.ClientURLs))

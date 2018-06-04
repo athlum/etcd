@@ -58,6 +58,7 @@ func startEtcdOrProxyV2() {
 
 	cfg := newConfig()
 	defaultInitialCluster := cfg.ec.InitialCluster
+	defaultInitialClusterTrans := cfg.ec.InitialClusterTrans
 
 	err := cfg.parse(os.Args[1:])
 	if err != nil {
@@ -81,7 +82,7 @@ func startEtcdOrProxyV2() {
 	GoMaxProcs := runtime.GOMAXPROCS(0)
 	plog.Infof("setting maximum number of CPUs to %d, total number of available CPUs is %d", GoMaxProcs, runtime.NumCPU())
 
-	defaultHost, dhErr := (&cfg.ec).UpdateDefaultClusterFromName(defaultInitialCluster)
+	defaultHost, dhErr := (&cfg.ec).UpdateDefaultClusterFromName(defaultInitialCluster, defaultInitialClusterTrans)
 	if defaultHost != "" {
 		plog.Infof("advertising using detected default host %q", defaultHost)
 	}

@@ -54,10 +54,14 @@ type RaftCluster struct {
 	removed map[types.ID]bool
 }
 
-func NewClusterFromURLsMap(token string, urlsmap types.URLsMap) (*RaftCluster, error) {
+func NewClusterFromURLsMap(token string, urlsmap, tUrlsmap types.URLsMap) (*RaftCluster, error) {
 	c := NewCluster(token)
 	for name, urls := range urlsmap {
-		m := NewMember(name, urls, token, nil)
+		tUrls, ok := tUrlsmap[name]
+		if !ok {
+			return nil, fmt.Errorf("member %v has no heartbeat port", name)
+		}
+		m := NewMember(name, urls, tUrls, token, nil)
 		if _, ok := c.members[m.ID]; ok {
 			return nil, fmt.Errorf("member exists with identical ID %v", m)
 		}
@@ -153,6 +157,17 @@ func (c *RaftCluster) PeerURLs() []string {
 	return urls
 }
 
+func (c *RaftCluster) PeerTransURLs() []string {
+	c.Lock()
+	defer c.Unlock()
+	urls := make([]string, 0)
+	for _, p := range c.members {
+		urls = append(urls, p.PeerTransURLs...)
+	}
+	sort.Strings(urls)
+	return urls
+}
+
 // ClientURLs returns a list of all client addresses.
 // The returned list is sorted in ascending lexicographical order.
 func (c *RaftCluster) ClientURLs() []string {
@@ -213,7 +228,7 @@ func (c *RaftCluster) Recover(onSet func(*semver.Version)) {
 	onSet(c.version)
 
 	for _, m := range c.members {
-		plog.Infof("added member %s %v to cluster %s from store", m.ID, m.PeerURLs, c.id)
+		plog.Infof("added member %s %v,[trans] %v to cluster %s from store", m.ID, m.PeerURLs, m.PeerTransURLs, c.id)
 	}
 	if c.version != nil {
 		plog.Infof("set the cluster version to %v from store", version.Cluster(c.version.String()))
@@ -234,9 +249,13 @@ func (c *RaftCluster) ValidateConfigurationChange(cc raftpb.ConfChange) error {
 			return ErrIDExists
 		}
 		urls := make(map[string]bool)
+		tUrls := make(map[string]bool)
 		for _, m := range members {
 			for _, u := range m.PeerURLs {
 				urls[u] = true
+			}
+			for _, u := range m.PeerTransURLs {
+				tUrls[u] = true
 			}
 		}
 		m := new(Member)
@@ -246,6 +265,11 @@ func (c *RaftCluster) ValidateConfigurationChange(cc raftpb.ConfChange) error {
 		for _, u := range m.PeerURLs {
 			if urls[u] {
 				return ErrPeerURLexists
+			}
+		}
+		for _, u := range m.PeerTransURLs {
+			if tUrls[u] {
+				return ErrPeerTransURLexists
 			}
 		}
 	case raftpb.ConfChangeRemoveNode:
@@ -257,12 +281,16 @@ func (c *RaftCluster) ValidateConfigurationChange(cc raftpb.ConfChange) error {
 			return ErrIDNotFound
 		}
 		urls := make(map[string]bool)
+		tUrls := make(map[string]bool)
 		for _, m := range members {
 			if m.ID == id {
 				continue
 			}
 			for _, u := range m.PeerURLs {
 				urls[u] = true
+			}
+			for _, u := range m.PeerTransURLs {
+				tUrls[u] = true
 			}
 		}
 		m := new(Member)
@@ -272,6 +300,11 @@ func (c *RaftCluster) ValidateConfigurationChange(cc raftpb.ConfChange) error {
 		for _, u := range m.PeerURLs {
 			if urls[u] {
 				return ErrPeerURLexists
+			}
+		}
+		for _, u := range m.PeerTransURLs {
+			if tUrls[u] {
+				return ErrPeerTransURLexists
 			}
 		}
 	default:
@@ -348,7 +381,7 @@ func (c *RaftCluster) UpdateRaftAttributes(id types.ID, raftAttr RaftAttributes)
 		mustSaveMemberToBackend(c.be, c.members[id])
 	}
 
-	plog.Noticef("updated member %s %v in cluster %s", id, raftAttr.PeerURLs, c.id)
+	plog.Noticef("updated member %s %v, [trans] %v in cluster %s", id, raftAttr.PeerURLs, raftAttr.PeerTransURLs, c.id)
 }
 
 func (c *RaftCluster) Version() *semver.Version {
