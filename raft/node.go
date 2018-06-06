@@ -316,14 +316,15 @@ func (n *node) run(r *raft) {
 		// Currently it is dropped in Step silently.
 		case m := <-propc:
 			m.From = r.id
-			for i := 0; i < 256; i += 1 {
-				select {
-				case pm := <-propc:
-					m.Entries = append(m.Entries, pm.Entries...)
-				default:
-					break
-				}
-			}
+			// tiglab hack
+			// for i := 0; i < 256; i += 1 {
+			// 	select {
+			// 	case pm := <-propc:
+			// 		m.Entries = append(m.Entries, pm.Entries...)
+			// 	default:
+			// 		break
+			// 	}
+			// }
 			r.Step(m)
 		case m := <-n.recvc:
 			// filter out response message from unknown From.
