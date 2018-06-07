@@ -70,6 +70,9 @@ func (e *batchEncoder) worker(mc chan batchMsg, stopc chan struct{}, l int) {
 }
 
 func (e *batchEncoder) marshalc(rc chan *walpb.Record, mc chan batchMsg, stopc chan struct{}) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	var (
 		data []byte
 		err  error
@@ -104,9 +107,6 @@ func (e *batchEncoder) marshalc(rc chan *walpb.Record, mc chan batchMsg, stopc c
 }
 
 func (e *batchEncoder) start(l int) (chan *walpb.Record, func()) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
 	var (
 		stopc = make(chan struct{})
 		stop  = func() {
