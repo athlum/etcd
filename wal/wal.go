@@ -601,13 +601,17 @@ func (w *WAL) Save(st raftpb.HardState, ents []raftpb.Entry) error {
 
 	mustSync := raft.MustSync(st, w.state, len(ents))
 
+	batch := w.encoder.batch()
+	rc, stop := batch.start(len(ents) + 1)
 	// TODO(xiangli): no more reference operator
 	for i := range ents {
-		if err := w.saveEntry(&ents[i]); err != nil {
-			return err
-		}
+		w.saveEntryC(&ents[i], rc)
 	}
-	if err := w.saveState(&st); err != nil {
+	w.saveStateC(&st, rc)
+
+	err := <-batch.ec
+	stop()
+	if err != io.EOF {
 		return err
 	}
 
