@@ -1,6 +1,7 @@
 package wal
 
 import (
+	"io"
 	"io/ioutil"
 	"os"
 	"testing"
@@ -11,7 +12,7 @@ import (
 func TestBatchWriteEntry(t *testing.T) {
 	p, err := ioutil.TempDir(os.TempDir(), "waltest")
 	if err != nil {
-		b.Fatal(err)
+		t.Fatal(err)
 	}
 	defer os.RemoveAll(p)
 
@@ -41,6 +42,6 @@ func TestBatchWriteEntry(t *testing.T) {
 	err = <-batch.ec
 	stop()
 	if err != io.EOF {
-		t.Fatalf(err)
+		t.Fatal(err)
 	}
 }

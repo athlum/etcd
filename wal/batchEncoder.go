@@ -48,7 +48,7 @@ func (e *encoder) batch() *batchEncoder {
 }
 
 func (e *batchEncoder) worker(mc chan batchMsg, stopc chan struct{}, l int) {
-	for i := 0; i < l; i += 1 {
+	for i := 0; i < l-1; i += 1 {
 		select {
 		case m := <-mc:
 			if err := writeUint64(e.bw, m.lenField, e.uint64buf); err != nil {
