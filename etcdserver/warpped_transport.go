@@ -43,7 +43,7 @@ func (t *routedTransporter) Send(m []raftpb.Message) {
 	sm := []raftpb.Message{}
 
 	for _, msg := range m {
-		if msg.Type == raftpb.MsgHeartbeat || msg.Type == raftpb.MsgHeartbeatResp {
+		if msg.Type == raftpb.MsgHeartbeatResp {
 			sm = append(sm, msg)
 		} else {
 			nm = append(nm, msg)

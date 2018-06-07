@@ -317,14 +317,14 @@ func (n *node) run(r *raft) {
 		case m := <-propc:
 			m.From = r.id
 			// tiglab hack
-			// for i := 0; i < 256; i += 1 {
-			// 	select {
-			// 	case pm := <-propc:
-			// 		m.Entries = append(m.Entries, pm.Entries...)
-			// 	default:
-			// 		break
-			// 	}
-			// }
+			for i := 0; i < 256; i += 1 {
+				select {
+				case pm := <-propc:
+					m.Entries = append(m.Entries, pm.Entries...)
+				default:
+					break
+				}
+			}
 			r.Step(m)
 		case m := <-n.recvc:
 			// filter out response message from unknown From.
