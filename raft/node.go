@@ -317,7 +317,7 @@ func (n *node) run(r *raft) {
 		case m := <-propc:
 			m.From = r.id
 			// tiglab hack
-			for i := 0; i < 256; i += 1 {
+			for i := 0; i < 64; i += 1 {
 				select {
 				case pm := <-propc:
 					m.Entries = append(m.Entries, pm.Entries...)
